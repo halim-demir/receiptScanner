@@ -44,7 +44,10 @@ class AppColors {
 class AppText {
   AppText._();
 
-  static TextStyle get _base => GoogleFonts.inter();
+  // decoration explicitly forced to none here — every AppText style below
+  // inherits this, so no label can accidentally pick up an underline from
+  // an ambient DefaultTextStyle further up the tree.
+  static TextStyle get _base => GoogleFonts.inter(decoration: TextDecoration.none);
 
   static TextStyle time = _base.copyWith(
     fontSize: 14,

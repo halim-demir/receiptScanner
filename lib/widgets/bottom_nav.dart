@@ -1,11 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// The frosted-glass pill navigation bar with "Kamera" / "Galeri" tabs,
-/// as seen at the bottom of screen-camera and screen-gallery.
-class GlassBottomNav extends StatelessWidget {
-  const GlassBottomNav({
+/// The navigation bar with "Kamera" / "Galeri" tabs.
+/// Frosted glass effect removed per user request.
+class BottomNav extends StatelessWidget {
+  const BottomNav({
     super.key,
     required this.currentIndex,
     required this.onChanged,
@@ -18,36 +17,30 @@ class GlassBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            height: 64,
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            decoration: BoxDecoration(
-              color: AppColors.glassNavBg,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: AppColors.borderSubtle),
+      child: Container(
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(32),
+          border: Border.all(color: AppColors.borderSubtle),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _NavTab(
+              icon: Icons.camera_alt_outlined,
+              label: 'Kamera',
+              active: currentIndex == 0,
+              onTap: () => onChanged(0),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _NavTab(
-                  icon: Icons.camera_alt_outlined,
-                  label: 'Kamera',
-                  active: currentIndex == 0,
-                  onTap: () => onChanged(0),
-                ),
-                _NavTab(
-                  icon: Icons.image_outlined,
-                  label: 'Galeri',
-                  active: currentIndex == 1,
-                  onTap: () => onChanged(1),
-                ),
-              ],
+            _NavTab(
+              icon: Icons.image_outlined,
+              label: 'Galeri',
+              active: currentIndex == 1,
+              onTap: () => onChanged(1),
             ),
-          ),
+          ],
         ),
       ),
     );

@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import '../services/excel_service/excel_service.dart';
+import '../services/permission_service.dart';
 import '../services/storage/secure_storage_service.dart';
 import '../theme/app_theme.dart';
 
 /// The side menu opened from the gear icon on Camera/Gallery headers.
 /// Holds:
 ///  - Google AI Studio API key entry (stored via [SecureStorageService])
-///  - Excel export info + "export/share a copy" action
-///
-/// Architecture note (post code-review fix): the running Excel file is
-/// always kept in the app's own sandboxed storage — there's no "pick a
-/// location" step anymore, since that pattern doesn't work reliably on
-/// mobile (see ExcelService doc). This screen only shows where that file
-/// lives and offers a one-shot "export a copy" action.
+///  - Excel file connection: the user picks their own existing .xlsx once
+///    (its headers are preserved); every scan is appended to an in-app
+///    working copy, which the user explicitly saves back over the
+///    original file whenever they want (see ExcelService doc for why
+///    silent, always-on writes to an arbitrary external file aren't
+///    reliably possible on mobile right now).
 class SettingsDrawer extends StatefulWidget {
   const SettingsDrawer({super.key});
 
@@ -26,7 +26,9 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
   bool _obscureKey = true;
   bool _hasSavedKey = false;
   String? _excelPath;
+  bool _hasWorkingFile = false;
   bool _exportingCopy = false;
+  bool _importing = false;
   bool _loading = true;
 
   @override
@@ -37,11 +39,13 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
 
   Future<void> _load() async {
     final hasKey = await SecureStorageService.instance.hasApiKey();
+    final hasFile = await _excelService.hasWorkingFile();
     final path = await _excelService.localFilePath();
     if (!mounted) return;
     setState(() {
       _hasSavedKey = hasKey;
       _excelPath = path;
+      _hasWorkingFile = hasFile;
       _loading = false;
     });
   }
@@ -64,14 +68,53 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
     setState(() => _hasSavedKey = false);
   }
 
+  Future<void> _importFile() async {
+    final permission = await PermissionService.ensureStoragePermission();
+    if (permission != PermissionState.granted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(permission == PermissionState.permanentlyDenied
+                ? 'Dosya seçmek için depolama izni gerekiyor. Ayarlardan izin verebilirsiniz.'
+                : 'Depolama izni reddedildi.'),
+            action: permission == PermissionState.permanentlyDenied
+                ? SnackBarAction(label: 'Ayarlar', onPressed: PermissionService.openSettings)
+                : null,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _importing = true);
+    try {
+      final imported = await _excelService.importExistingFile();
+      if (!mounted) return;
+      if (imported) {
+        final path = await _excelService.localFilePath();
+        setState(() {
+          _hasWorkingFile = true;
+          _excelPath = path;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Excel dosyası içe aktarıldı.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   Future<void> _exportCopy() async {
     setState(() => _exportingCopy = true);
     try {
-      final path = await _excelService.exportCopyToUserLocation();
+      final path = await _excelService.saveExtraCopy();
       if (!mounted) return;
       if (path != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kopya kaydedildi.')),
+          SnackBar(content: Text('Dosya kaydedildi: $path')),
         );
       }
     } on ExcelServiceException catch (e) {
@@ -119,41 +162,48 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
                   _SectionLabel('Excel Dosyası'),
                   const SizedBox(height: 8),
                   _DestinationTile(
-                    title: 'Bu cihazda otomatik kayıtlı',
-                    subtitle: _excelPath ?? '',
-                    icon: Icons.smartphone,
-                    selected: true,
-                    onTap: null,
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _exportingCopy ? null : _exportCopy,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      icon: _exportingCopy
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.ios_share, size: 18),
-                      label: const Text('Kopyayı Dışa Aktar / Paylaş'),
-                    ),
+                    title: 'Dosya Yolu',
+                    subtitle: _excelPath ?? 'Henüz dosya seçilmedi',
+                    icon: Icons.folder_open,
+                    selected: _hasWorkingFile,
+                    onTap: _importing ? null : _importFile,
                   ),
                   const SizedBox(height: 10),
                   _DestinationTile(
                     title: 'Google Drive',
-                    subtitle: 'Yakında kullanılabilir olacak',
+                    subtitle: 'Bulut depolamadan dosya seçin',
                     icon: Icons.cloud_outlined,
                     selected: false,
-                    enabled: false,
-                    onTap: null,
+                    onTap: _importing ? null : _importFile,
                   ),
+                  const SizedBox(height: 16),
+                  if (_hasWorkingFile) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _exportingCopy ? null : _exportCopy,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: _exportingCopy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.ios_share, size: 18),
+                        label: const Text('Excel Dosyasını Kaydet'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Taranan fişler uygulama içindeki çalışma kopyasına eklenir. '
+                      'Orijinal dosyanızı güncellemek için yukarıdaki butonu kullanın.',
+                      style: AppText.navLabelInactive.copyWith(fontSize: 11.5, height: 1.4),
+                    ),
+                  ],
                   const SizedBox(height: 28),
 
                   _SectionLabel('Gizlilik'),

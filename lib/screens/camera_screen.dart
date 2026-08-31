@@ -6,7 +6,6 @@ import '../services/camera_service/camera_service.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dashed_border_box.dart';
-import '../widgets/glass_bottom_nav.dart';
 import '../widgets/screen_header.dart';
 import 'processing_screen.dart';
 import 'settings_screen.dart';
@@ -139,12 +138,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             SafeArea(
               child: Column(
                 children: [
-                  const StatusBarRow(),
                   ScreenHeader(
                     leftIcon: Icons.settings_outlined,
                     onLeftTap: () => Scaffold.of(context).openEndDrawer(),
                     title: 'Kamera',
                     titleIcon: Icons.receipt_long,
+                    onTitleTap: () => widget.onSwitchTab(1),
                     rightIcon: Icons.history,
                     onRightTap: () {},
                   ),
@@ -279,8 +278,6 @@ class _ControlsContainer extends StatelessWidget {
             onFinish: onFinish,
           ),
           const SizedBox(height: 20),
-          GlassBottomNav(currentIndex: 0, onChanged: onSwitchTab),
-          const HomeIndicator(),
         ],
       ),
     );

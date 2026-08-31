@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/gallery_service/gallery_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/glass_bottom_nav.dart';
 import '../widgets/screen_header.dart';
 import 'processing_screen.dart';
 import 'settings_screen.dart';
@@ -64,12 +63,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
         builder: (context) => SafeArea(
           child: Column(
             children: [
-              const StatusBarRow(),
               ScreenHeader(
                 leftIcon: Icons.settings_outlined,
                 onLeftTap: () => Scaffold.of(context).openEndDrawer(),
                 title: 'Galeri',
                 titleIcon: Icons.receipt_long,
+                onTitleTap: () => widget.onSwitchTab(0),
                 rightIcon: Icons.history,
                 onRightTap: () {},
               ),
@@ -110,8 +109,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              GlassBottomNav(currentIndex: 1, onChanged: widget.onSwitchTab),
-              const HomeIndicator(),
             ],
           ),
         ),

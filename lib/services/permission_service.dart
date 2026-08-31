@@ -27,5 +27,26 @@ class PermissionService {
     return PermissionState.denied;
   }
 
+  static Future<PermissionState> ensureStoragePermission() async {
+    // Basic storage permission check
+    var status = await Permission.storage.status;
+    if (status.isGranted) return PermissionState.granted;
+
+    // Also check manageExternalStorage for Android (common for file access)
+    if (await Permission.manageExternalStorage.isGranted) return PermissionState.granted;
+
+    // Request permissions
+    final result = await Permission.storage.request();
+    if (result.isGranted) return PermissionState.granted;
+
+    final manageResult = await Permission.manageExternalStorage.request();
+    if (manageResult.isGranted) return PermissionState.granted;
+
+    if (result.isPermanentlyDenied || manageResult.isPermanentlyDenied) {
+      return PermissionState.permanentlyDenied;
+    }
+    return PermissionState.denied;
+  }
+
   static Future<void> openSettings() => openAppSettings();
 }

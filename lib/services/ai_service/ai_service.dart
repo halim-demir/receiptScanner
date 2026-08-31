@@ -55,9 +55,9 @@ class AiService {
   static const String _prompt =
       """Bu görsellerdeki Türkçe finansal harcama fişini analiz et. Fiş üzerindeki bilgileri ayıkla ve YALNIZCA aşağıdaki JSON formatında yanıt ver:
 
-{ "tarih": "DD.MM.YYYY", "fis_no": "string", "firma_adi": "string", "matrah": 0.00, "brut": 0.00, "kdv_tutarı": 0.00, "kategori_onerisi": "Yemek" | "Diğer" }
+{ "tarih": "DD.MM.YYYY", "fis_no": "string", "firma_adi": "string", "matrah": 0.00, "brut": 0.00, "kdv_orani": 20 | 10 | 1, "kdv_tutari": 0.00, "kategori_onerisi": "Yemek" | "Diğer" }
 
-Okunamayan veya bulunamayan alanlar için null değeri döndür. Sayısal değerlerde nokta kullan.""";
+kdv_orani, fişte uygulanan KDV oranını (yüzde 20, 10 ya da 1) belirtir; kdv_tutari o orana karşılık gelen tutardır. Okunamayan veya bulunamayan alanlar için null değeri döndür. Sayısal değerlerde nokta kullan.""";
 
   /// Analyzes one or more receipt images (e.g. front/back, or a multi-page
   /// receipt) and returns the merged structured result.
@@ -142,7 +142,7 @@ Okunamayan veya bulunamayan alanlar için null değeri döndür. Sayısal değer
     final decoded = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final text = _extractModelText(decoded);
     final jsonMap = _extractJson(text);
-    return ReceiptData.fromJson(jsonMap);
+    return ReceiptData.fromAiJson(jsonMap);
   }
 
   Future<Map<String, dynamic>> _toInlineDataPart(XFile file) async {

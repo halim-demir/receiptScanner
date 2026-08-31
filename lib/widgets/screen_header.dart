@@ -1,38 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// iOS-style status bar (time + signal/wifi/battery) used at the top of
-/// every screen in the design.
-class StatusBarRow extends StatelessWidget {
-  const StatusBarRow({super.key});
-
-//Silinecek
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: SizedBox(
-        height: 44,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('09:41', style: AppText.time),
-            Row(
-              children: const [
-                Icon(Icons.signal_cellular_alt, size: 18, color: Colors.white),
-                SizedBox(width: 8),
-                Icon(Icons.wifi, size: 18, color: Colors.white),
-                SizedBox(width: 8),
-                Icon(Icons.battery_full, size: 20, color: Colors.white),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Circular translucent icon button used for header actions
 /// (settings, history, back, more...).
 class HeaderIconButton extends StatelessWidget {
@@ -75,6 +43,7 @@ class ScreenHeader extends StatelessWidget {
     this.title,
     this.titleIcon,
     this.centeredTitle,
+    this.onTitleTap,
   });
 
   final IconData leftIcon;
@@ -85,6 +54,7 @@ class ScreenHeader extends StatelessWidget {
   /// Used for the small uppercase logo+label header (Kamera / Galeri).
   final String? title;
   final IconData? titleIcon;
+  final VoidCallback? onTitleTap;
 
   /// Used for the plain centered title (Processing screen: "İşlem").
   final String? centeredTitle;
@@ -100,10 +70,24 @@ class ScreenHeader extends StatelessWidget {
           children: [
             HeaderIconButton(icon: leftIcon, onTap: onLeftTap),
             if (title != null)
-              Row(
-                children: [
-
-                ],
+              InkWell(
+                onTap: onTitleTap,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    children: [
+                      if (titleIcon != null)
+                        Icon(titleIcon, size: 18, color: AppColors.primary),
+                      if (titleIcon != null) const SizedBox(width: 6),
+                      Text(title!.toUpperCase(), style: AppText.headerTitle),
+                      if (onTitleTap != null) ...[
+                        const SizedBox(width: 4),
+                        const Icon(Icons.keyboard_arrow_down, size: 16, color: AppColors.textMuted),
+                      ],
+                    ],
+                  ),
+                ),
               )
             else if (centeredTitle != null)
               Text(centeredTitle!, style: AppText.processingTitle),

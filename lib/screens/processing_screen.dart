@@ -6,13 +6,13 @@ import '../models/receipt_data.dart';
 import '../services/ai_service/ai_service.dart';
 import '../services/excel_service/excel_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/glass_bottom_nav.dart';
 import '../widgets/screen_header.dart';
 
 /// Matches Figma node `screen-processing` (56623:7602), wired to the real
 /// AI + Excel pipeline. Receives the photos chosen on Camera/Gallery,
 /// sends the currently-active one to [AiService] for extraction, lets the
-/// user correct any field, then exports to the configured Excel file.
+/// user edit every field (all 11 map onto the real spreadsheet's exact
+/// columns — see [ReceiptData]), then exports to the connected Excel file.
 class ProcessingScreen extends StatefulWidget {
   const ProcessingScreen({super.key, required this.images});
 
@@ -50,7 +50,9 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       final result = await _aiService.analyzeReceipt([widget.images[_activeIndex]]);
       if (!mounted) return;
       setState(() {
-        _data = result;
+        // Keep whatever the user already typed into "Masrafı Yapan" — the
+        // AI never fills that field, re-analysis shouldn't erase it.
+        _data = result.copyWith(masrafiYapan: _data.masrafiYapan);
         _status = _Status.ready;
       });
     } on AiServiceException catch (e) {
@@ -81,17 +83,25 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     _analyze();
   }
 
-  Future<void> _editTextField({
+  /// Generic editable-field dialog — every one of the 11 fields uses this,
+  /// so all of them are fully user-editable regardless of whether the AI
+  /// filled them in or not.
+  Future<void> _editField({
     required String label,
     required String? currentValue,
     required void Function(String value) onSave,
+    TextInputType? keyboardType,
   }) async {
     final controller = TextEditingController(text: currentValue ?? '');
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(label),
-        content: TextField(controller: controller, autofocus: true),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: keyboardType,
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal')),
           TextButton(
@@ -104,30 +114,12 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     if (result != null) onSave(result);
   }
 
-  Future<void> _editCategory() async {
-    final result = await showDialog<ReceiptCategory>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Kategori Önerisi'),
-        children: ReceiptCategory.values
-            .map((c) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, c),
-                  child: Text(c.label),
-                ))
-            .toList(),
-      ),
-    );
-    if (result != null) {
-      setState(() => _data = _data.copyWith(kategoriOnerisi: result));
-    }
-  }
-
   Future<void> _exportExcel() async {
     setState(() => _exporting = true);
     try {
-      // The running Excel file lives in the app's own sandboxed storage
-      // (see ExcelService doc) — always writable, no picker/permission
-      // step needed here. Users export/share a copy from Settings.
+      // Writes into the in-app working copy of the user's Excel file
+      // (headers/row-placement rules in ExcelService). User saves it back
+      // over the original from Settings whenever they want.
       await _excelService.exportReceipt(_data);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -149,6 +141,8 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     super.dispose();
   }
 
+  double? _parseNum(String v) => double.tryParse(v.trim().replaceAll(',', '.'));
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -156,7 +150,6 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            const StatusBarRow(),
             ScreenHeader(
               leftIcon: Icons.arrow_back,
               onLeftTap: () => Navigator.of(context).maybePop(),
@@ -187,43 +180,17 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                       errorMessage: _errorMessage,
                       data: _data,
                       onRetry: _analyze,
-                      onEditTarih: () => _editTextField(
-                        label: 'Tarih',
-                        currentValue: _data.tarih,
-                        onSave: (v) => setState(() => _data = _data.copyWith(tarih: v)),
+                      onEditText: (label, currentValue, apply) => _editField(
+                        label: label,
+                        currentValue: currentValue,
+                        onSave: (v) => setState(() => _data = apply(_data, v)),
                       ),
-                      onEditFisNo: () => _editTextField(
-                        label: 'Fiş No',
-                        currentValue: _data.fisNo,
-                        onSave: (v) => setState(() => _data = _data.copyWith(fisNo: v)),
+                      onEditNumber: (label, currentValue, apply) => _editField(
+                        label: label,
+                        currentValue: currentValue,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onSave: (v) => setState(() => _data = apply(_data, _parseNum(v))),
                       ),
-                      onEditFirmaAdi: () => _editTextField(
-                        label: 'Firma Adı',
-                        currentValue: _data.firmaAdi,
-                        onSave: (v) => setState(() => _data = _data.copyWith(firmaAdi: v)),
-                      ),
-                      onEditMatrah: () => _editTextField(
-                        label: 'Matrah',
-                        currentValue: _data.matrah?.toStringAsFixed(2),
-                        onSave: (v) => setState(
-                          () => _data = _data.copyWith(matrah: double.tryParse(v.replaceAll(',', '.'))),
-                        ),
-                      ),
-                      onEditBrut: () => _editTextField(
-                        label: 'Brüt',
-                        currentValue: _data.brut?.toStringAsFixed(2),
-                        onSave: (v) => setState(
-                          () => _data = _data.copyWith(brut: double.tryParse(v.replaceAll(',', '.'))),
-                        ),
-                      ),
-                      onEditKdv: () => _editTextField(
-                        label: 'KDV Tutarı',
-                        currentValue: _data.kdvTutari?.toStringAsFixed(2),
-                        onSave: (v) => setState(
-                          () => _data = _data.copyWith(kdvTutari: double.tryParse(v.replaceAll(',', '.'))),
-                        ),
-                      ),
-                      onEditKategori: _editCategory,
                     ),
                   ],
                 ),
@@ -425,32 +392,36 @@ class _ThumbnailTrack extends StatelessWidget {
   }
 }
 
+typedef _TextEditRequest = void Function(
+  String label,
+  String? currentValue,
+  ReceiptData Function(ReceiptData data, String newValue) apply,
+);
+
+typedef _NumberEditRequest = void Function(
+  String label,
+  String? currentDisplayValue,
+  ReceiptData Function(ReceiptData data, double? newValue) apply,
+);
+
 class _FormPanel extends StatelessWidget {
   const _FormPanel({
     required this.status,
     required this.errorMessage,
     required this.data,
     required this.onRetry,
-    required this.onEditTarih,
-    required this.onEditFisNo,
-    required this.onEditFirmaAdi,
-    required this.onEditMatrah,
-    required this.onEditBrut,
-    required this.onEditKdv,
-    required this.onEditKategori,
+    required this.onEditText,
+    required this.onEditNumber,
   });
 
   final _Status status;
   final String? errorMessage;
   final ReceiptData data;
   final VoidCallback onRetry;
-  final VoidCallback onEditTarih;
-  final VoidCallback onEditFisNo;
-  final VoidCallback onEditFirmaAdi;
-  final VoidCallback onEditMatrah;
-  final VoidCallback onEditBrut;
-  final VoidCallback onEditKdv;
-  final VoidCallback onEditKategori;
+  final _TextEditRequest onEditText;
+  final _NumberEditRequest onEditNumber;
+
+  static String? _money(double? v) => v == null ? null : '${v.toStringAsFixed(2)} ₺';
 
   @override
   Widget build(BuildContext context) {
@@ -485,36 +456,80 @@ class _FormPanel extends StatelessWidget {
           const SizedBox(height: 14),
           if (status == _Status.loading) const _LoadingRows(),
           if (status == _Status.error) _ErrorState(message: errorMessage, onRetry: onRetry),
-          if (status == _Status.ready) ...[
-            _FieldRow(label: 'Tarih', value: data.tarih, onEdit: onEditTarih),
-            const SizedBox(height: 10),
-            _FieldRow(label: 'Fiş No', value: data.fisNo, onEdit: onEditFisNo),
-            const SizedBox(height: 10),
-            _FieldRow(label: 'Firma Adı', value: data.firmaAdi, onEdit: onEditFirmaAdi),
-            const SizedBox(height: 10),
-            _FieldRow(
-              label: 'Matrah',
-              value: data.matrah != null ? '${data.matrah!.toStringAsFixed(2)} ₺' : null,
-              onEdit: onEditMatrah,
-            ),
-            const SizedBox(height: 10),
-            _FieldRow(
-              label: 'Brüt',
-              value: data.brut != null ? '${data.brut!.toStringAsFixed(2)} ₺' : null,
-              onEdit: onEditBrut,
-            ),
-            const SizedBox(height: 10),
-            _FieldRow(
-              label: 'KDV Tutarı',
-              value: data.kdvTutari != null ? '${data.kdvTutari!.toStringAsFixed(2)} ₺' : null,
-              onEdit: onEditKdv,
-            ),
-            const SizedBox(height: 10),
-            _FieldRow(label: 'Kategori Önerisi', value: data.kategoriOnerisi?.label, onEdit: onEditKategori),
-          ],
+          if (status == _Status.ready) ..._buildFields(),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildFields() {
+    Widget row(_FieldRow field) => Padding(padding: const EdgeInsets.only(bottom: 10), child: field);
+
+    return [
+      row(_FieldRow(
+        label: 'Tarih',
+        value: data.tarih,
+        onEdit: () => onEditText('Tarih', data.tarih, (d, v) => d.copyWith(tarih: v)),
+      )),
+      row(_FieldRow(
+        label: 'Fiş No',
+        value: data.fisNo,
+        onEdit: () => onEditText('Fiş No', data.fisNo, (d, v) => d.copyWith(fisNo: v)),
+      )),
+      row(_FieldRow(
+        label: 'Firma Adı',
+        value: data.firmaAdi,
+        onEdit: () => onEditText('Firma Adı', data.firmaAdi, (d, v) => d.copyWith(firmaAdi: v)),
+      )),
+      row(_FieldRow(
+        label: 'Matrah',
+        value: _money(data.matrah),
+        onEdit: () => onEditNumber(
+          'Matrah',
+          data.matrah?.toStringAsFixed(2),
+          (d, v) => d.copyWith(matrah: v),
+        ),
+      )),
+      row(_FieldRow(
+        label: 'Brüt',
+        value: _money(data.brut),
+        onEdit: () => onEditNumber('Brüt', data.brut?.toStringAsFixed(2), (d, v) => d.copyWith(brut: v)),
+      )),
+      row(_FieldRow(
+        label: '%20 KDV',
+        value: _money(data.kdv20),
+        onEdit: () => onEditNumber('%20 KDV', data.kdv20?.toStringAsFixed(2), (d, v) => d.copyWith(kdv20: v)),
+      )),
+      row(_FieldRow(
+        label: '%10 KDV',
+        value: _money(data.kdv10),
+        onEdit: () => onEditNumber('%10 KDV', data.kdv10?.toStringAsFixed(2), (d, v) => d.copyWith(kdv10: v)),
+      )),
+      row(_FieldRow(
+        label: '%1 KDV',
+        value: _money(data.kdv1),
+        onEdit: () => onEditNumber('%1 KDV', data.kdv1?.toStringAsFixed(2), (d, v) => d.copyWith(kdv1: v)),
+      )),
+      row(_FieldRow(
+        label: 'Yemek',
+        value: _money(data.yemek),
+        onEdit: () => onEditNumber('Yemek', data.yemek?.toStringAsFixed(2), (d, v) => d.copyWith(yemek: v)),
+      )),
+      row(_FieldRow(
+        label: 'Diğer',
+        value: _money(data.diger),
+        onEdit: () => onEditNumber('Diğer', data.diger?.toStringAsFixed(2), (d, v) => d.copyWith(diger: v)),
+      )),
+      _FieldRow(
+        label: 'Masrafı Yapan',
+        value: data.masrafiYapan,
+        onEdit: () => onEditText(
+          'Masrafı Yapan',
+          data.masrafiYapan,
+          (d, v) => d.copyWith(masrafiYapan: v),
+        ),
+      ),
+    ];
   }
 }
 
@@ -525,7 +540,7 @@ class _LoadingRows extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        for (var i = 0; i < 7; i++)
+        for (var i = 0; i < 11; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
@@ -575,6 +590,9 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
+/// A single editable row. Every field in this screen — AI-filled or
+/// not — uses this same row and is tappable to edit, per explicit
+/// product requirement that all text fields stay user-editable.
 class _FieldRow extends StatelessWidget {
   const _FieldRow({required this.label, required this.value, required this.onEdit});
   final String label;
@@ -583,32 +601,36 @@ class _FieldRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: AppColors.rowBg,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.rowBorder),
-      ),
-      child: Row(
-        children: [
-          SizedBox(width: 110, child: Text(label, style: AppText.fieldLabel)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              value?.isNotEmpty == true ? value! : '—',
-              style: AppText.fieldValue.copyWith(
-                color: value?.isNotEmpty == true ? AppColors.panelTextDark : AppColors.panelLabel,
+        onTap: onEdit,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.rowBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.rowBorder),
+          ),
+          child: Row(
+            children: [
+              SizedBox(width: 110, child: Text(label, style: AppText.fieldLabel)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  value?.isNotEmpty == true ? value! : '—',
+                  style: AppText.fieldValue.copyWith(
+                    color: value?.isNotEmpty == true ? AppColors.panelTextDark : AppColors.panelLabel,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              overflow: TextOverflow.ellipsis,
-            ),
+              const SizedBox(width: 12),
+              const Icon(Icons.edit_outlined, size: 16, color: AppColors.panelLabel),
+            ],
           ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: onEdit,
-            child: const Icon(Icons.edit_outlined, size: 16, color: AppColors.panelLabel),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -685,7 +707,6 @@ class _BottomActionBar extends StatelessWidget {
               ],
             ),
           ),
-          const HomeIndicator(dark: true),
         ],
       ),
     );
