@@ -6,6 +6,7 @@ import '../models/receipt_data.dart';
 import '../services/ai_service/ai_service.dart';
 import '../services/excel_service/excel_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/bottom_nav.dart';
 import '../widgets/screen_header.dart';
 
 /// Matches Figma node `screen-processing` (56623:7602), wired to the real
@@ -117,13 +118,26 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   Future<void> _exportExcel() async {
     setState(() => _exporting = true);
     try {
-      // Writes into the in-app working copy of the user's Excel file
-      // (headers/row-placement rules in ExcelService). User saves it back
-      // over the original from Settings whenever they want.
-      await _excelService.exportReceipt(_data);
+      final path = await _excelService.exportReceipt(_data);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Excel dosyasına aktarıldı.')),
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: AppColors.primary),
+                SizedBox(width: 10),
+                Text('Başarılı'),
+              ],
+            ),
+            content: Text('Dosya başarıyla kaydedildi\n\nKaydedilen Dosya:\n$path'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
         );
       }
     } on ExcelServiceException catch (e) {
@@ -544,7 +558,7 @@ class _LoadingRows extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
-              height: 41,
+              height: 30,
               decoration: BoxDecoration(
                 color: AppColors.rowBg,
                 borderRadius: BorderRadius.circular(10),
@@ -556,11 +570,11 @@ class _LoadingRows extends StatelessWidget {
         const Row(
           children: [
             SizedBox(
-              width: 16,
-              height: 16,
+              width: 14,
+              height: 14,
               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
             ),
-            SizedBox(width: 10),
+            SizedBox(width: 8),
             Text('Fiş analiz ediliyor...', style: TextStyle(color: AppColors.panelLabel)),
           ],
         ),

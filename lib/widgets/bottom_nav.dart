@@ -94,29 +94,4 @@ class _NavTab extends StatelessWidget {
   }
 }
 
-/// The thin white/dark pill at the very bottom representing the iOS
-/// home indicator.
-class HomeIndicator extends StatelessWidget {
-  const HomeIndicator({super.key, this.dark = false});
 
-  /// When [dark] is true, the bar is rendered dark (used on the white
-  /// bottom-action-bar of the Processing screen).
-  final bool dark;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 21, bottom: 8),
-      child: Center(
-        child: Container(
-          width: 139,
-          height: 5,
-          decoration: BoxDecoration(
-            color: dark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(100),
-          ),
-        ),
-      ),
-    );
-  }
-}

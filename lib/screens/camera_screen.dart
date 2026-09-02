@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/camera_service/camera_service.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/bottom_nav.dart';
 import '../widgets/dashed_border_box.dart';
 import '../widgets/screen_header.dart';
 import 'processing_screen.dart';
@@ -143,7 +144,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                     onLeftTap: () => Scaffold.of(context).openEndDrawer(),
                     title: 'Kamera',
                     titleIcon: Icons.receipt_long,
-                    onTitleTap: () => widget.onSwitchTab(1),
                     rightIcon: Icons.history,
                     onRightTap: () {},
                   ),
@@ -278,6 +278,7 @@ class _ControlsContainer extends StatelessWidget {
             onFinish: onFinish,
           ),
           const SizedBox(height: 20),
+          BottomNav(currentIndex: 0, onChanged: onSwitchTab),
         ],
       ),
     );

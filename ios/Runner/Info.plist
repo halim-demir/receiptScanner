@@ -47,5 +47,9 @@
 	<string>Galerinizden fiş fotoğrafı seçebilmek için erişim gereklidir.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Çekilen fiş fotoğraflarını kaydedebilmek için erişim gereklidir.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

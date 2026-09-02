@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../services/excel_service/excel_service.dart';
 import '../services/permission_service.dart';
@@ -26,7 +28,7 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
   bool _obscureKey = true;
   bool _hasSavedKey = false;
   String? _excelPath;
-  bool _hasWorkingFile = false;
+  bool _hasTargetFile = false;
   bool _exportingCopy = false;
   bool _importing = false;
   bool _loading = true;
@@ -39,15 +41,23 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
 
   Future<void> _load() async {
     final hasKey = await SecureStorageService.instance.hasApiKey();
-    final hasFile = await _excelService.hasWorkingFile();
+    final hasFile = await _excelService.hasTargetFile();
     final path = await _excelService.localFilePath();
     if (!mounted) return;
     setState(() {
       _hasSavedKey = hasKey;
       _excelPath = path;
-      _hasWorkingFile = hasFile;
+      _hasTargetFile = hasFile;
       _loading = false;
     });
+  }
+
+  String _formatDisplayPath(String path) {
+    if (Platform.isIOS && path.contains('/Documents/')) {
+      final fileName = path.split('/').last;
+      return 'Dosyalar > receiptscanner > $fileName';
+    }
+    return path;
   }
 
   Future<void> _saveApiKey() async {
@@ -88,17 +98,17 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
 
     setState(() => _importing = true);
     try {
-      final imported = await _excelService.importExistingFile();
+      final selected = await _excelService.selectTargetFile();
       if (!mounted) return;
-      if (imported) {
+      if (selected) {
         final path = await _excelService.localFilePath();
         setState(() {
-          _hasWorkingFile = true;
+          _hasTargetFile = true;
           _excelPath = path;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Excel dosyası içe aktarıldı.'),
+            content: Text('Excel dosyası başarıyla seçildi.'),
           ),
         );
       }
@@ -110,11 +120,11 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
   Future<void> _exportCopy() async {
     setState(() => _exportingCopy = true);
     try {
-      final path = await _excelService.saveExtraCopy();
+      final path = await _excelService.saveAs();
       if (!mounted) return;
       if (path != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Dosya kaydedildi: $path')),
+          SnackBar(content: Text('Dosya farklı kaydedildi: $path')),
         );
       }
     } on ExcelServiceException catch (e) {
@@ -162,22 +172,21 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
                   _SectionLabel('Excel Dosyası'),
                   const SizedBox(height: 8),
                   _DestinationTile(
-                    title: 'Dosya Yolu',
-                    subtitle: _excelPath ?? 'Henüz dosya seçilmedi',
+                    title: 'Excel Dosya Yolu',
+                    subtitle: _excelPath != null ? _formatDisplayPath(_excelPath!) : 'Henüz dosya seçilmedi',
                     icon: Icons.folder_open,
-                    selected: _hasWorkingFile,
+                    selected: _hasTargetFile,
                     onTap: _importing ? null : _importFile,
                   ),
-                  const SizedBox(height: 10),
-                  _DestinationTile(
-                    title: 'Google Drive',
-                    subtitle: 'Bulut depolamadan dosya seçin',
-                    icon: Icons.cloud_outlined,
-                    selected: false,
-                    onTap: _importing ? null : _importFile,
+                  const SizedBox(height: 12),
+                  _InfoCard(
+                    icon: Icons.info_outline,
+                    text: Platform.isIOS
+                        ? 'iOS Güvenlik Kısıtlaması: Apple, uygulamaların dış klasörlerdeki (İndirilenler gibi) dosyalara doğrudan ve sessizce yazmasına izin vermez. \n\n"Dosyalar > iPhone\'umda > receiptscanner" klasörü uygulamanın tam yetkili alanıdır. Orijinal dosyanızı buraya taşıyıp oradan seçerseniz, tüm işlemleriniz anında ve doğrudan o dosya üzerine kaydedilir.'
+                        : 'Android 11+ Bilgi: Cihazınızdaki "İndirilenler" veya diğer sistem klasörlerindeki dosyalara doğrudan yazabilmek için "Tüm dosyalara erişim" izni gereklidir. Bu izin verildiğinde, seçtiğiniz orijinal dosya anında güncellenir.',
                   ),
                   const SizedBox(height: 16),
-                  if (_hasWorkingFile) ...[
+                  if (_hasTargetFile) ...[
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -194,13 +203,12 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.ios_share, size: 18),
-                        label: const Text('Excel Dosyasını Kaydet'),
+                        label: const Text('Excel Dosyasını Farklı Kaydet'),
                       ),
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Taranan fişler uygulama içindeki çalışma kopyasına eklenir. '
-                      'Orijinal dosyanızı güncellemek için yukarıdaki butonu kullanın.',
+                      'Taranan fişler Ayarlar\'dan seçtiğiniz orijinal dosyaya doğrudan eklenir. Gerektiğinde dosyanın bir yedeğini yukarıdaki butonu kullanarak alabilirsiniz.',
                       style: AppText.navLabelInactive.copyWith(fontSize: 11.5, height: 1.4),
                     ),
                   ],
@@ -312,6 +320,41 @@ class _SavedKeyCard extends StatelessWidget {
             child: Text('API anahtarı kayıtlı', style: TextStyle(color: Colors.white)),
           ),
           TextButton(onPressed: onClear, child: const Text('Kaldır')),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.primary, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: AppText.navLabelInactive.copyWith(
+                fontSize: 12,
+                color: Colors.white70,
+                height: 1.5,
+              ),
+            ),
+          ),
         ],
       ),
     );

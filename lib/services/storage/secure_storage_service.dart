@@ -31,11 +31,24 @@ class SecureStorageService {
 
   static const _keyEncryptedApiKey = 'gemini_api_key_enc_v1';
   static const _keyMasterKey = 'aes_master_key_v1';
+  static const _keyExcelPath = 'selected_excel_path_v1';
 
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
+
+  Future<void> saveExcelPath(String path) async {
+    await _storage.write(key: _keyExcelPath, value: path);
+  }
+
+  Future<String?> getExcelPath() async {
+    return await _storage.read(key: _keyExcelPath);
+  }
+
+  Future<void> clearExcelPath() async {
+    await _storage.delete(key: _keyExcelPath);
+  }
 
   Future<enc.Key> _getOrCreateMasterKey() async {
     final existing = await _storage.read(key: _keyMasterKey);

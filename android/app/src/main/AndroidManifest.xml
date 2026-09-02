@@ -10,8 +10,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
 
-    <!-- Only needed if the user targets a legacy (<API 29) write path for Excel export -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
+    <!-- Full file access for direct overwrite of Excel files in Downloads/External folders -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
 
     <!-- Internet access for the Google AI Studio (Gemini) API — HTTPS only, see ai_service.dart -->
     <uses-permission android:name="android.permission.INTERNET"/>
