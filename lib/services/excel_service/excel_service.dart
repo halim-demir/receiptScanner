@@ -161,36 +161,54 @@ class ExcelService {
     return File(path).exists();
   }
 
-  /// Lets the user pick their existing .xlsx. The selected file's path
-  /// is stored persistently and used directly for future scans.
+  /// Lets the user pick their existing .xlsx. 
+  /// - Android: Uses the direct path if permission allows.
+  /// - iOS: Copies to the app's persistent Documents folder (visible in Files app)
+  ///   to gain permanent write access, as iOS blocks direct write to external 
+  ///   pick-paths after the session ends.
   Future<bool> selectTargetFile() async {
     final result = await FilePicker.platform.pickFiles(
       dialogTitle: 'İşlem yapılacak Excel dosyasını seç',
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
+      lockParentWindow: true,
     );
     final picked = result?.files.single;
     if (picked?.path == null) return false;
 
-    // Direct path usage as requested ("var olan dosyaya yazılsın")
-    await SecureStorageService.instance.saveExcelPath(picked!.path!);
+    String finalPath = picked!.path!;
+
+    if (Platform.isIOS) {
+      // PRO iOS STRATEGY: Ensure the file lives in our "In-Place" enabled Documents folder.
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName = picked.name;
+      final persistentFile = File('${dir.path}/$fileName');
+      
+      // Only copy if it's not already there
+      if (picked.path != persistentFile.path) {
+        final pickedFile = File(picked.path!);
+        await pickedFile.copy(persistentFile.path);
+      }
+      finalPath = persistentFile.path;
+    }
+
+    await SecureStorageService.instance.saveExcelPath(finalPath);
     return true;
   }
 
-  /// Writes one [ReceiptData] directly into the selected Excel file.
+  /// Writes one [ReceiptData] directly into the persistent Excel file.
   Future<String> exportReceipt(ReceiptData data) async {
     final file = await _targetFile();
     
-    // Check if file still exists at the selected path
     if (!await file.exists()) {
-      throw ExcelServiceException('Seçili dosya yerinde bulunamadı. Lütfen Ayarlar\'dan tekrar seçin.');
+      throw ExcelServiceException('Dosya bulunamadı. Lütfen Ayarlar\'dan tekrar dosya seçin.');
     }
 
-    final existingBytes = await file.readAsBytes();
-    final job = _WriteJob(existingBytes, data.toExcelRowByHeader());
+    final bytes = await file.readAsBytes();
+    final job = _WriteJob(bytes, data.toExcelRowByHeader());
     final newBytes = await compute(_writeRowIsolate, job);
     
-    // Direct write to the selected path.
+    // Direct write to our persistent sandbox path.
     await file.writeAsBytes(newBytes, flush: true);
     return file.path;
   }

@@ -24,8 +24,6 @@ class ReceiptData {
     this.kdv20,
     this.kdv10,
     this.kdv1,
-    this.yemek,
-    this.diger,
     this.masrafiYapan,
   });
 
@@ -37,8 +35,6 @@ class ReceiptData {
   final double? kdv20;
   final double? kdv10;
   final double? kdv1;
-  final double? yemek;
-  final double? diger;
   final String? masrafiYapan;
 
   /// Builds a [ReceiptData] from the AI service's raw JSON contract (see
@@ -60,10 +56,6 @@ class ReceiptData {
       kdv20: rate == 20 ? vatAmount : null,
       kdv10: rate == 10 ? vatAmount : null,
       kdv1: rate == 1 ? vatAmount : null,
-      // Convenience pre-fill only — both fields stay user-editable and
-      // whatever value is on screen at export time is what's used.
-      yemek: category == ReceiptCategory.yemek ? brut : null,
-      diger: category == ReceiptCategory.diger ? brut : null,
       masrafiYapan: null,
     );
   }
@@ -91,8 +83,6 @@ class ReceiptData {
     Object? kdv20 = _unset,
     Object? kdv10 = _unset,
     Object? kdv1 = _unset,
-    Object? yemek = _unset,
-    Object? diger = _unset,
     Object? masrafiYapan = _unset,
   }) {
     return ReceiptData(
@@ -104,8 +94,6 @@ class ReceiptData {
       kdv20: identical(kdv20, _unset) ? this.kdv20 : kdv20 as double?,
       kdv10: identical(kdv10, _unset) ? this.kdv10 : kdv10 as double?,
       kdv1: identical(kdv1, _unset) ? this.kdv1 : kdv1 as double?,
-      yemek: identical(yemek, _unset) ? this.yemek : yemek as double?,
-      diger: identical(diger, _unset) ? this.diger : diger as double?,
       masrafiYapan: identical(masrafiYapan, _unset) ? this.masrafiYapan : masrafiYapan as String?,
     );
   }

@@ -2,11 +2,15 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:open_file_plus/open_file_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/receipt_data.dart';
 import '../services/ai_service/ai_service.dart';
 import '../services/excel_service/excel_service.dart';
+import '../services/onedrive_service/onedrive_auth_service.dart';
+import '../services/onedrive_service/onedrive_excel_service.dart';
+import '../services/onedrive_service/onedrive_file_ref_store.dart';
 import '../theme/app_theme.dart';
-import '../widgets/bottom_nav.dart';
 import '../widgets/screen_header.dart';
 
 /// Matches Figma node `screen-processing` (56623:7602), wired to the real
@@ -28,6 +32,8 @@ enum _Status { loading, ready, error }
 class _ProcessingScreenState extends State<ProcessingScreen> {
   final _aiService = AiService();
   final _excelService = ExcelService();
+  final _oneDriveExcelService = OneDriveExcelService();
+  final _oneDriveRefStore = OneDriveFileRefStore();
 
   int _activeIndex = 0;
   double _zoom = 1.0;
@@ -117,8 +123,17 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
 
   Future<void> _exportExcel() async {
     setState(() => _exporting = true);
+    String? localPath;
+    String? webUrl;
     try {
-      final path = await _excelService.exportReceipt(_data);
+      final oneDriveRef = await _oneDriveRefStore.load();
+      if (oneDriveRef != null) {
+        final token = await OneDriveAuthService.instance.getAccessToken();
+        webUrl = await _oneDriveExcelService.exportReceipt(oneDriveRef, _data, token);
+      } else {
+        localPath = await _excelService.exportReceipt(_data);
+      }
+
       if (mounted) {
         showDialog(
           context: context,
@@ -130,8 +145,22 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                 Text('Başarılı'),
               ],
             ),
-            content: Text('Dosya başarıyla kaydedildi\n\nKaydedilen Dosya:\n$path'),
+            content: Text(
+              'Dosya başarıyla kaydedildi.\n\n${localPath ?? webUrl ?? ''}',
+            ),
             actions: [
+              if (localPath != null || webUrl != null)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    if (localPath != null) {
+                      OpenFile.open(localPath);
+                    } else if (webUrl != null) {
+                      launchUrl(Uri.parse(webUrl), mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  child: const Text('Git'),
+                ),
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Tamam'),
@@ -144,6 +173,14 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
+    } on OneDriveExcelException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } on OneDriveAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -152,6 +189,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   @override
   void dispose() {
     _aiService.dispose();
+    _oneDriveExcelService.dispose();
     super.dispose();
   }
 
@@ -294,7 +332,7 @@ class _OcrHighlight extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.25),
+        color: AppColors.primary.withValues(alpha: 0.25),
         border: Border.all(color: AppColors.primary),
         borderRadius: BorderRadius.circular(4),
       ),
@@ -524,16 +562,6 @@ class _FormPanel extends StatelessWidget {
         value: _money(data.kdv1),
         onEdit: () => onEditNumber('%1 KDV', data.kdv1?.toStringAsFixed(2), (d, v) => d.copyWith(kdv1: v)),
       )),
-      row(_FieldRow(
-        label: 'Yemek',
-        value: _money(data.yemek),
-        onEdit: () => onEditNumber('Yemek', data.yemek?.toStringAsFixed(2), (d, v) => d.copyWith(yemek: v)),
-      )),
-      row(_FieldRow(
-        label: 'Diğer',
-        value: _money(data.diger),
-        onEdit: () => onEditNumber('Diğer', data.diger?.toStringAsFixed(2), (d, v) => d.copyWith(diger: v)),
-      )),
       _FieldRow(
         label: 'Masrafı Yapan',
         value: data.masrafiYapan,
@@ -558,7 +586,7 @@ class _LoadingRows extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
-              height: 30,
+              height: 41,
               decoration: BoxDecoration(
                 color: AppColors.rowBg,
                 borderRadius: BorderRadius.circular(10),
@@ -570,11 +598,11 @@ class _LoadingRows extends StatelessWidget {
         const Row(
           children: [
             SizedBox(
-              width: 14,
-              height: 14,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
             ),
-            SizedBox(width: 8),
+            SizedBox(width: 10),
             Text('Fiş analiz ediliyor...', style: TextStyle(color: AppColors.panelLabel)),
           ],
         ),
