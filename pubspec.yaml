@@ -52,6 +52,11 @@ dependencies:
   # Native file/folder picker for choosing the Excel export location.
   file_picker: ^8.1.2
 
+  # Microsoft sign-in (native MSAL) — used for OneDrive/SharePoint-hosted
+  # Excel files, so we can write directly into the real, live workbook
+  # via Microsoft Graph instead of a local device copy.
+  msal_auth: ^3.5.0
+
   # Runtime permission requests (camera, photos, storage).
   permission_handler: ^11.3.1
 
@@ -72,6 +77,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Required by msal_auth — see assets/msal_config.json (values must be
+  # filled in from your own Azure app registration; see Settings screen /
+  # onedrive_auth_service.dart doc for the exact steps).
+  assets:
+    - assets/msal_config.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

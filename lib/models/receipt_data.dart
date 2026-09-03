@@ -122,12 +122,18 @@ class ReceiptData {
       'FİRMA ADI': firmaAdi,
       'MATRAH': num(matrah),
       'BRÜT': num(brut),
-      '%20 KDV': num(kdv20),
-      '%10 KDV': num(kdv10),
-      '%1 KDV': num(kdv1),
+      '%20': num(kdv20),
+      '%10': num(kdv10),
+      '%1': num(kdv1),
+      'YEMEK': num(yemek),
+      'DİĞER': num(diger),
       'MASRAFI YAPAN': masrafiYapan,
     };
     map.removeWhere((key, value) => value == null || value.isEmpty);
+    // removeWhere doesn't change the map's static type (still
+    // Map<String, String?>) even though every remaining value is
+    // guaranteed non-null at this point — cast explicitly so this
+    // actually returns Map<String, String> as declared.
     return map.cast<String, String>();
   }
 

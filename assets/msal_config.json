@@ -1,0 +1,15 @@
+{
+  "authorization_user_agent": "DEFAULT",
+  "account_mode": "SINGLE",
+  "authorities": [
+    {
+      "type": "AAD",
+      "audience": {
+        "type": "PersonalMicrosoftAccount"
+      }
+    }
+  ],
+  "logging": {
+    "pii_enabled": false
+  }
+}

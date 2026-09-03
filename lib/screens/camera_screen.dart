@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import '../services/camera_service/camera_service.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/bottom_nav.dart';
 import '../widgets/dashed_border_box.dart';
+import '../widgets/glass_bottom_nav.dart';
 import '../widgets/screen_header.dart';
 import 'processing_screen.dart';
 import 'settings_screen.dart';
@@ -278,7 +278,7 @@ class _ControlsContainer extends StatelessWidget {
             onFinish: onFinish,
           ),
           const SizedBox(height: 20),
-          BottomNav(currentIndex: 0, onChanged: onSwitchTab),
+          GlassBottomNav(currentIndex: 0, onChanged: onSwitchTab),
         ],
       ),
     );

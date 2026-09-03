@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/gallery_service/gallery_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/bottom_nav.dart';
+import '../widgets/glass_bottom_nav.dart';
 import '../widgets/screen_header.dart';
 import 'processing_screen.dart';
 import 'settings_screen.dart';
@@ -109,7 +109,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              BottomNav(currentIndex: 1, onChanged: widget.onSwitchTab),
+              GlassBottomNav(currentIndex: 1, onChanged: widget.onSwitchTab),
             ],
           ),
         ),

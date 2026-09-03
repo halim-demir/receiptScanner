@@ -10,12 +10,13 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
 
-    <!-- Full file access for direct overwrite of Excel files in Downloads/External folders -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
+    <!-- Only needed if the user targets a legacy (<API 29) write path for Excel export -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
 
-    <!-- Internet access for the Google AI Studio (Gemini) API — HTTPS only, see ai_service.dart -->
+    <!-- Internet access for the Google AI Studio (Gemini) API and
+         Microsoft Graph (OneDrive/SharePoint Excel) — HTTPS only. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- No custom `android:name` here: this project uses Flutter's v2
          Android embedding (see flutterEmbedding meta-data below), whose
          FlutterActivity initializes itself without a custom Application
@@ -28,6 +29,7 @@
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
+            android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -55,6 +57,27 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Required by msal_auth (Microsoft sign-in for OneDrive/
+             SharePoint Excel access) to capture the OAuth redirect.
+             Replace YOUR_BASE64_SIGNATURE_HASH below with the SAME value
+             you use for _redirectUriAndroid in onedrive_auth_service.dart
+             (URL-encoded base64 SHA1 of your signing certificate) — see
+             that file's doc comment for the exact keytool/openssl command. -->
+        <activity
+            android:name="com.microsoft.identity.client.BrowserTabActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="msauth"
+                    android:host="${applicationId}"
+                    android:path="/AIqW%2Fh3D%2Fyo%2BBStSPqBZvoQK7Xc%3D"/>
+            </intent-filter>
+        </activity>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -1,20 +1,19 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import '../services/excel_service/excel_service.dart';
-import '../services/permission_service.dart';
+import '../services/onedrive_service/onedrive_auth_service.dart';
+import '../services/onedrive_service/onedrive_excel_service.dart';
+import '../services/onedrive_service/onedrive_file_ref_store.dart';
 import '../services/storage/secure_storage_service.dart';
 import '../theme/app_theme.dart';
 
 /// The side menu opened from the gear icon on Camera/Gallery headers.
 /// Holds:
 ///  - Google AI Studio API key entry (stored via [SecureStorageService])
-///  - Excel file connection: the user picks their own existing .xlsx once
-///    (its headers are preserved); every scan is appended to an in-app
-///    working copy, which the user explicitly saves back over the
-///    original file whenever they want (see ExcelService doc for why
-///    silent, always-on writes to an arbitrary external file aren't
-///    reliably possible on mobile right now).
+///  - Excel connection: EITHER a live OneDrive/SharePoint workbook
+///    (preferred when connected — writes go straight into the real file
+///    via Microsoft Graph, see OneDriveExcelService) OR a local file
+///    picked once and kept as an in-app working copy (see ExcelService
+///    doc for why that one can't auto-sync back to the original).
 class SettingsDrawer extends StatefulWidget {
   const SettingsDrawer({super.key});
 
@@ -24,14 +23,19 @@ class SettingsDrawer extends StatefulWidget {
 
 class _SettingsDrawerState extends State<SettingsDrawer> {
   final _apiKeyController = TextEditingController();
+  final _shareLinkController = TextEditingController();
   final _excelService = ExcelService();
+  final _oneDriveRefStore = OneDriveFileRefStore();
   bool _obscureKey = true;
   bool _hasSavedKey = false;
   String? _excelPath;
-  bool _hasTargetFile = false;
+  bool _hasWorkingFile = false;
   bool _exportingCopy = false;
   bool _importing = false;
   bool _loading = true;
+  OneDriveFileRef? _oneDriveRef;
+  bool _connectingOneDrive = false;
+  String? _oneDriveError;
 
   @override
   void initState() {
@@ -41,23 +45,17 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
 
   Future<void> _load() async {
     final hasKey = await SecureStorageService.instance.hasApiKey();
-    final hasFile = await _excelService.hasTargetFile();
+    final hasFile = await _excelService.hasWorkingFile();
     final path = await _excelService.localFilePath();
+    final oneDriveRef = await _oneDriveRefStore.load();
     if (!mounted) return;
     setState(() {
       _hasSavedKey = hasKey;
       _excelPath = path;
-      _hasTargetFile = hasFile;
+      _hasWorkingFile = hasFile;
+      _oneDriveRef = oneDriveRef;
       _loading = false;
     });
-  }
-
-  String _formatDisplayPath(String path) {
-    if (Platform.isIOS && path.contains('/Documents/')) {
-      final fileName = path.split('/').last;
-      return 'Dosyalar > receiptscanner > $fileName';
-    }
-    return path;
   }
 
   Future<void> _saveApiKey() async {
@@ -79,36 +77,19 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
   }
 
   Future<void> _importFile() async {
-    final permission = await PermissionService.ensureStoragePermission();
-    if (permission != PermissionState.granted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(permission == PermissionState.permanentlyDenied
-                ? 'Dosya seçmek için depolama izni gerekiyor. Ayarlardan izin verebilirsiniz.'
-                : 'Depolama izni reddedildi.'),
-            action: permission == PermissionState.permanentlyDenied
-                ? SnackBarAction(label: 'Ayarlar', onPressed: PermissionService.openSettings)
-                : null,
-          ),
-        );
-      }
-      return;
-    }
-
     setState(() => _importing = true);
     try {
-      final selected = await _excelService.selectTargetFile();
+      final imported = await _excelService.importExistingFile();
       if (!mounted) return;
-      if (selected) {
+      if (imported) {
         final path = await _excelService.localFilePath();
         setState(() {
-          _hasTargetFile = true;
+          _hasWorkingFile = true;
           _excelPath = path;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Excel dosyası başarıyla seçildi.'),
+            content: Text('Excel dosyası içe aktarıldı. Yeni fişler mevcut başlıkların altına eklenecek.'),
           ),
         );
       }
@@ -117,14 +98,55 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
     }
   }
 
+  Future<void> _connectOneDrive() async {
+    final link = _shareLinkController.text.trim();
+    if (link.isEmpty) return;
+
+    setState(() {
+      _connectingOneDrive = true;
+      _oneDriveError = null;
+    });
+    try {
+      final token = await OneDriveAuthService.instance.signInInteractive();
+      final ref = await OneDriveExcelService().resolveShareLink(link, token);
+      await _oneDriveRefStore.save(ref);
+      if (!mounted) return;
+      setState(() {
+        _oneDriveRef = ref;
+        _shareLinkController.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('OneDrive dosyasına bağlanıldı. Fişler artık doğrudan bu dosyaya yazılacak.')),
+      );
+    } on OneDriveAuthException catch (e) {
+      if (mounted) setState(() => _oneDriveError = e.message);
+    } on OneDriveExcelException catch (e) {
+      if (mounted) setState(() => _oneDriveError = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _oneDriveError = 'Bağlanırken beklenmeyen bir hata oluştu.');
+    } finally {
+      if (mounted) setState(() => _connectingOneDrive = false);
+    }
+  }
+
+  Future<void> _disconnectOneDrive() async {
+    await _oneDriveRefStore.clear();
+    try {
+      await OneDriveAuthService.instance.signOut();
+    } catch (_) {
+      // Not fatal — the local reference is already cleared either way.
+    }
+    if (mounted) setState(() => _oneDriveRef = null);
+  }
+
   Future<void> _exportCopy() async {
     setState(() => _exportingCopy = true);
     try {
-      final path = await _excelService.saveAs();
+      final path = await _excelService.saveExtraCopy();
       if (!mounted) return;
       if (path != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Dosya farklı kaydedildi: $path')),
+          const SnackBar(content: Text('Kopya kaydedildi.')),
         );
       }
     } on ExcelServiceException catch (e) {
@@ -139,6 +161,7 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
   @override
   void dispose() {
     _apiKeyController.dispose();
+    _shareLinkController.dispose();
     super.dispose();
   }
 
@@ -171,47 +194,148 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
 
                   _SectionLabel('Excel Dosyası'),
                   const SizedBox(height: 8),
-                  _DestinationTile(
-                    title: 'Excel Dosya Yolu',
-                    subtitle: _excelPath != null ? _formatDisplayPath(_excelPath!) : 'Henüz dosya seçilmedi',
-                    icon: Icons.folder_open,
-                    selected: _hasTargetFile,
-                    onTap: _importing ? null : _importFile,
-                  ),
-                  const SizedBox(height: 12),
-                  _InfoCard(
-                    icon: Icons.info_outline,
-                    text: Platform.isIOS
-                        ? 'iOS Güvenlik Kısıtlaması: Apple, uygulamaların dış klasörlerdeki (İndirilenler gibi) dosyalara doğrudan ve sessizce yazmasına izin vermez. \n\n"Dosyalar > iPhone\'umda > receiptscanner" klasörü uygulamanın tam yetkili alanıdır. Orijinal dosyanızı buraya taşıyıp oradan seçerseniz, tüm işlemleriniz anında ve doğrudan o dosya üzerine kaydedilir.'
-                        : 'Android 11+ Bilgi: Cihazınızdaki "İndirilenler" veya diğer sistem klasörlerindeki dosyalara doğrudan yazabilmek için "Tüm dosyalara erişim" izni gereklidir. Bu izin verildiğinde, seçtiğiniz orijinal dosya anında güncellenir.',
-                  ),
-                  const SizedBox(height: 16),
-                  if (_hasTargetFile) ...[
+                  if (_oneDriveRef != null) ...[
+                    _DestinationTile(
+                      title: 'OneDrive — bağlı (${_oneDriveRef!.name ?? 'Excel dosyası'})',
+                      subtitle: 'Fişler doğrudan bu dosyaya, gerçek zamanlı yazılıyor',
+                      icon: Icons.cloud_done_outlined,
+                      selected: true,
+                      onTap: null,
+                    ),
+                    const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _exportingCopy ? null : _exportCopy,
+                        onPressed: _disconnectOneDrive,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary),
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        icon: _exportingCopy
+                        icon: const Icon(Icons.link_off, size: 18),
+                        label: const Text('Bağlantıyı Kaldır'),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                  ] else ...[
+                    Text(
+                      'OneDrive / SharePoint\'teki gerçek Excel dosyanıza doğrudan yazmak için '
+                      'düzenleme izinli bir paylaşım bağlantısı yapıştırın ve Microsoft '
+                      'hesabınızla giriş yapın.',
+                      style: AppText.navLabelInactive.copyWith(fontSize: 11.5, height: 1.4),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _shareLinkController,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'https://1drv.ms/... veya SharePoint bağlantısı',
+                        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                        filled: true,
+                        fillColor: AppColors.card,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    if (_oneDriveError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_oneDriveError!, style: const TextStyle(color: AppColors.danger, fontSize: 12)),
+                    ],
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _connectingOneDrive ? null : _connectOneDrive,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: _connectingOneDrive
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                               )
-                            : const Icon(Icons.ios_share, size: 18),
-                        label: const Text('Excel Dosyasını Farklı Kaydet'),
+                            : const Icon(Icons.cloud_outlined, size: 18),
+                        label: const Text('Microsoft ile Bağlan'),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Taranan fişler Ayarlar\'dan seçtiğiniz orijinal dosyaya doğrudan eklenir. Gerektiğinde dosyanın bir yedeğini yukarıdaki butonu kullanarak alabilirsiniz.',
-                      style: AppText.navLabelInactive.copyWith(fontSize: 11.5, height: 1.4),
-                    ),
+                    const SizedBox(height: 28),
                   ],
+
+                  _SectionLabel(_oneDriveRef != null ? 'Yerel Yedek Dosya' : 'Yerel Dosya (OneDrive Bağlı Değilse)'),
+                  const SizedBox(height: 8),
+                  _DestinationTile(
+                    title: _hasWorkingFile
+                        ? 'Dosya bağlı — yeni fişler başlıkların altına ekleniyor'
+                        : 'Henüz dosya seçilmedi',
+                    subtitle: _excelPath ?? '',
+                    icon: Icons.description_outlined,
+                    selected: _hasWorkingFile,
+                    onTap: null,
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _importing ? null : _importFile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: _importing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.folder_open, size: 18),
+                      label: Text(_hasWorkingFile ? 'Farklı Dosya Seç' : 'Mevcut Excel Dosyasını Seç'),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Seçtiğiniz dosyanın başlık satırı olduğu gibi kopyalanır; taranan '
+                    'her fiş bu başlıkların altına eklenir. Mobil işletim sistemleri bir '
+                    'uygulamanın dış bir dosyaya kalıcı olarak otomatik yazmasına izin '
+                    'vermediği için değişiklikler önce uygulama içinde tutulur — "Excel '
+                    'Dosyasını Kaydet" ile istediğiniz an orijinal dosyanın üzerine yazıp '
+                    'güncelleyebilirsiniz.',
+                    style: AppText.navLabelInactive.copyWith(fontSize: 11.5, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _exportingCopy || !_hasWorkingFile ? null : _exportCopy,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      icon: _exportingCopy
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.ios_share, size: 18),
+                      label: const Text('Excel Dosyasını Kaydet'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _DestinationTile(
+                    title: 'Google Drive',
+                    subtitle: 'Yakında kullanılabilir olacak',
+                    icon: Icons.cloud_outlined,
+                    selected: false,
+                    enabled: false,
+                    onTap: null,
+                  ),
                   const SizedBox(height: 28),
 
                   _SectionLabel('Gizlilik'),
@@ -320,41 +444,6 @@ class _SavedKeyCard extends StatelessWidget {
             child: Text('API anahtarı kayıtlı', style: TextStyle(color: Colors.white)),
           ),
           TextButton(onPressed: onClear, child: const Text('Kaldır')),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.icon, required this.text});
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppColors.primary, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: AppText.navLabelInactive.copyWith(
-                fontSize: 12,
-                color: Colors.white70,
-                height: 1.5,
-              ),
-            ),
-          ),
         ],
       ),
     );

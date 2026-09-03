@@ -6,7 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../models/receipt_data.dart';
-import '../storage/secure_storage_service.dart';
 
 class ExcelServiceException implements Exception {
   ExcelServiceException(this.message);
@@ -23,9 +22,11 @@ const _defaultHeaderOrder = [
   'FİRMA ADI',
   'MATRAH',
   'BRÜT',
-  '%20 KDV',
-  '%10 KDV',
-  '%1 KDV',
+  '%20',
+  '%10',
+  '%1',
+  'YEMEK',
+  'DİĞER',
   'MASRAFI YAPAN',
 ];
 
@@ -130,82 +131,54 @@ Uint8List _writeRowIsolate(_WriteJob job) {
 /// `saveExtraCopy()` lets them push the result back over the original
 /// file whenever they choose.
 class ExcelService {
-  Future<File> _targetFile() async {
-    final path = await SecureStorageService.instance.getExcelPath();
-    if (path == null) {
-      // Professional default: Use the user-visible "Documents" folder.
-      // On iOS, this is "On My iPhone > receiptscanner".
-      // On Android, this is the app's primary documents folder.
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/fisler.xlsx');
-      
-      // Auto-save this as the target if nothing is selected yet.
-      await SecureStorageService.instance.saveExcelPath(file.path);
-      return file;
-    }
-    return File(path);
+  Future<File> _workingFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/fisler.xlsx');
   }
 
-  Future<String> localFilePath() async {
-    final path = await SecureStorageService.instance.getExcelPath();
-    if (path == null) {
-      final dir = await getApplicationDocumentsDirectory();
-      return '${dir.path}/fisler.xlsx';
-    }
-    return path;
-  }
+  Future<String> localFilePath() async => (await _workingFile()).path;
 
-  Future<bool> hasTargetFile() async {
-    final path = await SecureStorageService.instance.getExcelPath();
-    if (path == null) return false;
-    return File(path).exists();
-  }
+  Future<bool> hasWorkingFile() async => (await _workingFile()).exists();
 
-  /// Lets the user pick their existing .xlsx. The selected file's path
-  /// is stored persistently and used directly for future scans.
-  Future<bool> selectTargetFile() async {
+  /// Lets the user pick their existing .xlsx. Its header row is read and
+  /// used as-is — never rewritten.
+  Future<bool> importExistingFile() async {
     final result = await FilePicker.platform.pickFiles(
-      dialogTitle: 'İşlem yapılacak Excel dosyasını seç',
+      dialogTitle: 'Mevcut Excel dosyasını seç',
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
+      withData: true,
     );
     final picked = result?.files.single;
-    if (picked?.path == null) return false;
+    if (picked?.bytes == null) return false;
 
-    // Direct path usage as requested ("var olan dosyaya yazılsın")
-    await SecureStorageService.instance.saveExcelPath(picked!.path!);
+    final file = await _workingFile();
+    await file.writeAsBytes(picked!.bytes!, flush: true);
     return true;
   }
 
-  /// Writes one [ReceiptData] directly into the selected Excel file.
+  /// Writes one [ReceiptData] into the first empty row after the last
+  /// used "FİŞ NO" value, under the matching existing headers.
   Future<String> exportReceipt(ReceiptData data) async {
-    final file = await _targetFile();
-    
-    // Check if file still exists at the selected path
-    if (!await file.exists()) {
-      throw ExcelServiceException('Seçili dosya yerinde bulunamadı. Lütfen Ayarlar\'dan tekrar seçin.');
-    }
+    final file = await _workingFile();
+    final existingBytes = await file.exists() ? await file.readAsBytes() : null;
 
-    final existingBytes = await file.readAsBytes();
     final job = _WriteJob(existingBytes, data.toExcelRowByHeader());
     final newBytes = await compute(_writeRowIsolate, job);
-    
-    // Direct write to the selected path.
     await file.writeAsBytes(newBytes, flush: true);
     return file.path;
   }
 
-  /// Creates a copy of the current file at a new location.
-  Future<String?> saveAs() async {
-    final file = await _targetFile();
+  Future<String?> saveExtraCopy() async {
+    final file = await _workingFile();
     if (!await file.exists()) {
-      throw ExcelServiceException('Dosya bulunamadı.');
+      throw ExcelServiceException('Henüz dışa aktarılacak bir fiş kaydı yok.');
     }
     final bytes = await file.readAsBytes();
 
     return FilePicker.platform.saveFile(
-      dialogTitle: 'Excel dosyasını farklı kaydet',
-      fileName: 'fisler_yedek.xlsx',
+      dialogTitle: 'Excel dosyasını kaydet',
+      fileName: 'fisler.xlsx',
       bytes: bytes,
       type: FileType.custom,
       allowedExtensions: ['xlsx'],

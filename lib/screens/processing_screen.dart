@@ -5,8 +5,11 @@ import 'package:image_picker/image_picker.dart';
 import '../models/receipt_data.dart';
 import '../services/ai_service/ai_service.dart';
 import '../services/excel_service/excel_service.dart';
+import '../services/onedrive_service/onedrive_auth_service.dart';
+import '../services/onedrive_service/onedrive_excel_service.dart';
+import '../services/onedrive_service/onedrive_file_ref_store.dart';
 import '../theme/app_theme.dart';
-import '../widgets/bottom_nav.dart';
+import '../widgets/glass_bottom_nav.dart';
 import '../widgets/screen_header.dart';
 
 /// Matches Figma node `screen-processing` (56623:7602), wired to the real
@@ -28,6 +31,8 @@ enum _Status { loading, ready, error }
 class _ProcessingScreenState extends State<ProcessingScreen> {
   final _aiService = AiService();
   final _excelService = ExcelService();
+  final _oneDriveExcelService = OneDriveExcelService();
+  final _oneDriveRefStore = OneDriveFileRefStore();
 
   int _activeIndex = 0;
   double _zoom = 1.0;
@@ -118,29 +123,32 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   Future<void> _exportExcel() async {
     setState(() => _exporting = true);
     try {
-      final path = await _excelService.exportReceipt(_data);
+      final oneDriveRef = await _oneDriveRefStore.load();
+      if (oneDriveRef != null) {
+        // Writes straight into the live OneDrive/SharePoint workbook via
+        // Microsoft Graph — no local copy involved.
+        final token = await OneDriveAuthService.instance.getAccessToken();
+        await _oneDriveExcelService.exportReceipt(oneDriveRef, _data, token);
+      } else {
+        // Fallback: in-app working copy of a locally-picked file (see
+        // ExcelService doc). User saves it back over the original from
+        // Settings whenever they want.
+        await _excelService.exportReceipt(_data);
+      }
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: AppColors.primary),
-                SizedBox(width: 10),
-                Text('Başarılı'),
-              ],
-            ),
-            content: Text('Dosya başarıyla kaydedildi\n\nKaydedilen Dosya:\n$path'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Tamam'),
-              ),
-            ],
-          ),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Excel dosyasına aktarıldı.')),
         );
       }
     } on ExcelServiceException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } on OneDriveExcelException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } on OneDriveAuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
@@ -152,6 +160,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   @override
   void dispose() {
     _aiService.dispose();
+    _oneDriveExcelService.dispose();
     super.dispose();
   }
 
@@ -558,7 +567,7 @@ class _LoadingRows extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
-              height: 30,
+              height: 41,
               decoration: BoxDecoration(
                 color: AppColors.rowBg,
                 borderRadius: BorderRadius.circular(10),
@@ -570,11 +579,11 @@ class _LoadingRows extends StatelessWidget {
         const Row(
           children: [
             SizedBox(
-              width: 14,
-              height: 14,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
             ),
-            SizedBox(width: 8),
+            SizedBox(width: 10),
             Text('Fiş analiz ediliyor...', style: TextStyle(color: AppColors.panelLabel)),
           ],
         ),
