@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.receiptscanner">
     <!-- Package/namespace now lives in android/app/build.gradle's
          `namespace` field (AGP 8 convention) — do not add it back here. -->
     <!-- Camera for receipt capture -->

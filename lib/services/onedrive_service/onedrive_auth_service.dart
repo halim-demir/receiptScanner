@@ -67,7 +67,8 @@ class OneDriveAuthService {
 
   bool get isConfigured =>
       _clientId != '49aee5ab-4312-44bc-84cd-965b17f9d9bc' &&
-      !_redirectUriAndroid.contains('AIqW%2Fh3D%2Fyo%2BBStSPqBZvoQK7Xc%3D');
+      !_redirectUriAndroid.contains('AIqW%2Fh3D%2Fyo%2BBStSPqBZvoQK7Xc%3D') &&
+      _redirectUriIOS != 'msauth.com.example.receiptscanner://auth'; // Varsa placeholder ile kontrol
 
   Future<SingleAccountPca> _client() async {
     if (!isConfigured) {
@@ -86,6 +87,7 @@ class OneDriveAuthService {
       appleConfig: AppleConfig(
         authority: 'https://login.microsoftonline.com/common',
         authorityType: AuthorityType.aad,
+        redirectUri: _redirectUriIOS,
       ),
     );
   }

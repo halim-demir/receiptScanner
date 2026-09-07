@@ -62,9 +62,14 @@
 			<string>com.example.receiptscanner</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.example.receiptscanner://auth</string>
+				<string>msauth.com.example.receiptscanner</string>
 			</array>
 		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>msauthv2</string>
+		<string>msauthv3</string>
 	</array>
 </dict>
 </plist>
